@@ -1,0 +1,655 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Farcade Run</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <script src="https://cdn.jsdelivr.net/npm/@farcade/game-sdk@latest/dist/index.min.js"></script>
+    <style>
+      body {
+        background: #e3e3e3;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+        text-align: center;
+        font-family: Arial, sans-serif;
+        touch-action: none;
+      }
+      #container {
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: fixed;
+        top: 0;
+        left: 0;
+      }
+      canvas {
+        background: #cecece;
+        touch-action: none;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      #start-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        align-items: center;
+        color: white;
+        z-index: 1000;
+        touch-action: none;
+      }
+      #start-screen img {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        z-index: -1;
+      }
+      .start-content {
+        position: relative;
+        z-index: 1;
+        text-align: center;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 20px;
+        border-radius: 10px 10px 0 0;
+        width: 100%;
+        margin-bottom: 0;
+      }
+      .controls-text {
+        font-size: 16px;
+        padding: 0 20px;
+        text-align: center;
+        margin-bottom: 15px;
+      }
+      #start-button {
+        padding: 15px 30px;
+        font-size: 20px;
+        background: #2ca8c2;
+        border: none;
+        border-radius: 5px;
+        color: white;
+        cursor: pointer;
+        margin-top: 10px;
+        margin-bottom: 20px;
+        touch-action: manipulation;
+      }
+      #start-button:hover {
+        background: #98cb4a;
+      }
+      @media (max-width: 768px) {
+        .controls-text {
+          font-size: 14px;
+        }
+        #start-button {
+          padding: 12px 24px;
+          font-size: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="start-screen">
+      <img
+        src="https://lqy3lriiybxcejon.public.blob.vercel-storage.com/F6IxkjQEmuXO/farcadestart-sdjXkof43gGadFTQLnMFlVqEyEM6ZU.png?NzKg"
+        alt="Infinite Runner"
+      />
+      <div class="start-content">
+        <div class="controls-text">
+          <p>Tap and hold to jump (longer hold = higher jump)</p>
+        </div>
+        <button id="start-button">Start Game</button>
+      </div>
+    </div>
+    <div id="container"></div>
+    <audio id="background-music" loop>
+      <source
+        src="https://lqy3lriiybxcejon.public.blob.vercel-storage.com/F6IxkjQEmuXO/gamemusic-WdKjQEmuXO.mp3?Heem"
+        type="audio/mpeg"
+      />
+    </audio>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sketch.js/1.1/sketch.min.js"></script>
+    <script>
+      var i = 0;
+
+      function random(min, max) {
+        return Math.round(min + Math.random() * (max - min));
+      }
+
+      function randomChoice(array) {
+        return array[Math.round(random(0, array.length - 1))];
+      }
+
+      var FarcadeRunner = Sketch.create({
+        fullscreen: true,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        container: document.getElementById("container"),
+        autopause: false,
+      });
+
+      // Enhanced touch control variables
+      let touchStartTime = 0;
+      let isTouching = false;
+      let touchStartY = 0;
+      let maxJumpHoldTime = 500; // Maximum time to hold for max jump height
+
+      function Vector2(x, y, width, height) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.previousX = 0;
+        this.previousY = 0;
+      }
+
+      Vector2.prototype.setPosition = function (x, y) {
+        this.previousX = this.x;
+        this.previousY = this.y;
+        this.x = x;
+        this.y = y;
+      };
+
+      Vector2.prototype.setX = function (x) {
+        this.previousX = this.x;
+        this.x = x;
+      };
+
+      Vector2.prototype.setY = function (y) {
+        this.previousY = this.y;
+        this.y = y;
+      };
+
+      Vector2.prototype.insercects = function (obj) {
+        if (
+          obj.x < this.x + this.width &&
+          obj.y < this.y + this.height &&
+          obj.x + obj.width > this.x &&
+          obj.y + obj.height > this.y
+        ) {
+          return true;
+        }
+        return false;
+      };
+
+      Vector2.prototype.insercectsLeft = function (obj) {
+        if (obj.x < this.x + this.width && obj.y < this.y + this.height) {
+          return true;
+        }
+        return false;
+      };
+
+      function Player(options) {
+        this.setPosition(options.x, options.y);
+        this.width = options.width;
+        this.height = options.height;
+        this.velocityX = 0;
+        this.velocityY = 0;
+        this.jumpSize = -13;
+        this.color = "#181818";
+        this.isJumping = false;
+        this.rotation = 0;
+      }
+
+      Player.prototype = new Vector2();
+
+      Player.prototype.update = function () {
+        this.velocityY += 1;
+        this.setPosition(this.x + this.velocityX, this.y + this.velocityY);
+
+        if (this.isJumping) {
+          this.rotation += 5;
+          if (this.rotation >= 360) {
+            this.rotation = 0;
+          }
+        }
+
+        if (this.y > FarcadeRunner.height || this.x + this.width < 0) {
+          if (FarcadeRunner.lives > 0) {
+            FarcadeRunner.lives--;
+            FarcadeRunner.platformManager.updateWhenLose();
+            // Reset player position relative to first platform
+            this.x = FarcadeRunner.platformManager.first.x + 50;
+            this.y = FarcadeRunner.platformManager.first.y - 32;
+            this.velocityX = 0;
+            this.velocityY = 0;
+            this.rotation = 0; // Reset rotation when falling off
+            FarcadeRunner.aceleration = 0;
+            FarcadeRunner.acelerationTweening = 0;
+            FarcadeRunner.scoreColor = "#181818";
+            FarcadeRunner.platformManager.maxDistanceBetween = 350;
+          } else {
+            FarcadeRunner.gameOver = true;
+          }
+        }
+
+        if (this.isJumping && this.velocityY < -8) {
+          this.velocityY += -0.75;
+        }
+      };
+
+      Player.prototype.draw = function () {
+        FarcadeRunner.save();
+        // Translate to center of player for rotation
+        FarcadeRunner.translate(this.x + this.width / 2, this.y + this.height / 2);
+        FarcadeRunner.rotate((this.rotation * Math.PI) / 180);
+
+        if (FarcadeRunner.playerImage.complete) {
+          FarcadeRunner.drawImage(
+            FarcadeRunner.playerImage,
+            -this.width / 2,
+            -this.height / 2,
+            this.width,
+            this.height,
+          );
+        } else {
+          // Fallback to rectangle if image hasn't loaded
+          FarcadeRunner.fillStyle = this.color;
+          FarcadeRunner.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+        }
+
+        FarcadeRunner.restore();
+      };
+
+      function Platform(options) {
+        this.x = options.x;
+        this.y = options.y;
+        this.width = options.width;
+        this.height = options.height;
+        this.previousX = 0;
+        this.previousY = 0;
+        this.color = options.color;
+      }
+
+      Platform.prototype = new Vector2();
+
+      Platform.prototype.draw = function () {
+        FarcadeRunner.fillStyle = this.color;
+        FarcadeRunner.fillRect(this.x, this.y, this.width, this.height);
+      };
+
+      function PlatformManager() {
+        this.maxDistanceBetween = 300;
+        this.colors = ["#2ca8c2", "#98cb4a", "#f76d3c", "#f15f74", "#5481e6"];
+
+        // Create initial platforms with guaranteed safe starting position
+        this.first = new Platform({
+          x: 100,
+          y: FarcadeRunner.height - 100,
+          width: 400,
+          height: 70,
+        });
+        this.second = new Platform({
+          x: this.first.x + this.first.width + random(this.maxDistanceBetween - 150, this.maxDistanceBetween),
+          y: random(this.first.y - 128, FarcadeRunner.height - 80),
+          width: 400,
+          height: 70,
+        });
+        this.third = new Platform({
+          x: this.second.x + this.second.width + random(this.maxDistanceBetween - 150, this.maxDistanceBetween),
+          y: random(this.second.y - 128, FarcadeRunner.height - 80),
+          width: 400,
+          height: 70,
+        });
+
+        this.first.height = this.first.y + FarcadeRunner.height;
+        this.second.height = this.second.y + FarcadeRunner.height;
+        this.third.height = this.third.y + FarcadeRunner.height;
+        this.first.color = randomChoice(this.colors);
+        this.second.color = randomChoice(this.colors);
+        this.third.color = randomChoice(this.colors);
+
+        this.colliding = false;
+        this.platforms = [this.first, this.second, this.third];
+      }
+
+      PlatformManager.prototype.update = function () {
+        this.first.x -= 3 + FarcadeRunner.aceleration;
+        if (this.first.x + this.first.width < 0) {
+          this.first.width = random(450, FarcadeRunner.width + 200);
+          this.first.x =
+            this.third.x + this.third.width + random(this.maxDistanceBetween - 150, this.maxDistanceBetween);
+          this.first.y = random(this.third.y - 32, FarcadeRunner.height - 80);
+          this.first.height = this.first.y + FarcadeRunner.height + 10;
+          this.first.color = randomChoice(this.colors);
+        }
+
+        this.second.x -= 3 + FarcadeRunner.aceleration;
+        if (this.second.x + this.second.width < 0) {
+          this.second.width = random(450, FarcadeRunner.width + 200);
+          this.second.x =
+            this.first.x + this.first.width + random(this.maxDistanceBetween - 150, this.maxDistanceBetween);
+          this.second.y = random(this.first.y - 32, FarcadeRunner.height - 80);
+          this.second.height = this.second.y + FarcadeRunner.height + 10;
+          this.second.color = randomChoice(this.colors);
+        }
+
+        this.third.x -= 3 + FarcadeRunner.aceleration;
+        if (this.third.x + this.third.width < 0) {
+          this.third.width = random(450, FarcadeRunner.width + 200);
+          this.third.x =
+            this.second.x + this.second.width + random(this.maxDistanceBetween - 150, this.maxDistanceBetween);
+          this.third.y = random(this.second.y - 32, FarcadeRunner.height - 80);
+          this.third.height = this.third.y + FarcadeRunner.height + 10;
+          this.third.color = randomChoice(this.colors);
+        }
+      };
+
+      PlatformManager.prototype.updateWhenLose = function () {
+        // Reset platforms with safe starting position
+        this.first.x = 100;
+        this.first.y = FarcadeRunner.height - 100;
+        this.first.color = randomChoice(this.colors);
+
+        this.second.x =
+          this.first.x + this.first.width + random(this.maxDistanceBetween - 150, this.maxDistanceBetween);
+        this.second.y = random(this.first.y - 128, FarcadeRunner.height - 80);
+        this.second.color = randomChoice(this.colors);
+
+        this.third.x =
+          this.second.x + this.second.width + random(this.maxDistanceBetween - 150, this.maxDistanceBetween);
+        this.third.y = random(this.second.y - 128, FarcadeRunner.height - 80);
+        this.third.color = randomChoice(this.colors);
+      };
+
+      function Particle(options) {
+        this.x = options.x;
+        this.y = options.y;
+        this.size = 10;
+        this.velocityX =
+          options.velocityX || random(-(FarcadeRunner.aceleration * 3) + -8, -(FarcadeRunner.aceleration * 3));
+        this.velocityY =
+          options.velocityY || random(-(FarcadeRunner.aceleration * 3) + -8, -(FarcadeRunner.aceleration * 3));
+        this.color = options.color;
+      }
+
+      Particle.prototype.update = function () {
+        this.x += this.velocityX;
+        this.y += this.velocityY;
+        this.size *= 0.89;
+      };
+
+      Particle.prototype.draw = function () {
+        FarcadeRunner.fillStyle = this.color;
+        FarcadeRunner.fillRect(this.x, this.y, this.size, this.size);
+      };
+
+      FarcadeRunner.setup = function () {
+        this.aceleration = 0;
+        this.acelerationTweening = 0;
+        this.platformManager = new PlatformManager();
+        // Set player position relative to first platform
+        this.player = new Player({
+          x: this.platformManager.first.x + 50,
+          y: this.platformManager.first.y - 32,
+          width: 32,
+          height: 32,
+        });
+        this.particles = [];
+        this.particlesIndex = 0;
+        this.particlesMax = 20;
+        this.collidedPlatform = null;
+        this.scoreColor = "#181818";
+        this.points = 0;
+        this.gameStarted = false;
+        this.lives = 3;
+        this.gameOver = false;
+        this.isMuted = false;
+
+        // Load player image
+        this.playerImage = new Image();
+        this.playerImage.src =
+          "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/F6IxkjQEmuXO/farcadelogo-m3aUwk5F5kgeXZxGtgRYmWwJbWNgyD.jpeg?Heem";
+
+        // Load background image
+        this.backgroundImage = new Image();
+        this.backgroundImage.src =
+          "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/F6IxkjQEmuXO/runbackground-WoBkpiL0lqGy5K7ak9iBL7UoyEtsvF.png?56ey";
+
+        // Set up Farcade SDK event listeners
+        window.FarcadeSDK.on("play_again", () => {
+          this.gameOver = false;
+          this.lives = 3;
+          this.points = 0;
+          this.aceleration = 0;
+          this.acelerationTweening = 2;
+          this.scoreColor = "#181818";
+          this.platformManager.maxDistanceBetween = 350;
+          this.platformManager.updateWhenLose();
+          this.player.x = this.platformManager.first.x + 50;
+          this.player.y = this.platformManager.first.y - 32;
+          this.player.velocityX = 0;
+          this.player.velocityY = 0;
+          this.player.rotation = 0;
+        });
+
+        window.FarcadeSDK.on("toggle_mute", (data) => {
+          this.isMuted = data.isMuted;
+          const music = document.getElementById("background-music");
+          if (this.isMuted) {
+            music.pause();
+          } else if (this.gameStarted && !this.gameOver) {
+            music.play();
+          }
+        });
+
+        // Enhanced touch event listeners
+        this.element.addEventListener(
+          "touchstart",
+          function (e) {
+            e.preventDefault();
+            touchStartTime = Date.now();
+            touchStartY = e.touches[0].clientY;
+            isTouching = true;
+            FarcadeRunner.player.isJumping = true;
+            FarcadeRunner.player.jumpHoldTime = 0; // Reset jump hold time
+          },
+          { passive: false },
+        );
+
+        this.element.addEventListener(
+          "touchmove",
+          function (e) {
+            e.preventDefault();
+            if (isTouching) {
+              const touchY = e.touches[0].clientY;
+              const touchDiff = touchStartY - touchY;
+              if (touchDiff > 50) {
+                // Reduced maximum upward velocity
+                FarcadeRunner.player.velocityY = Math.min(FarcadeRunner.player.velocityY - 1, -12);
+              }
+            }
+          },
+          { passive: false },
+        );
+
+        this.element.addEventListener(
+          "touchend",
+          function (e) {
+            e.preventDefault();
+            isTouching = false;
+            FarcadeRunner.player.isJumping = false;
+            FarcadeRunner.player.jumpHoldTime = 0; // Reset jump hold time
+          },
+          { passive: false },
+        );
+
+        // Handle window resize
+        window.addEventListener("resize", function () {
+          FarcadeRunner.width = window.innerWidth;
+          FarcadeRunner.height = window.innerHeight;
+          FarcadeRunner.resize();
+        });
+      };
+
+      FarcadeRunner.update = function () {
+        if (!this.gameStarted || this.gameOver) return;
+
+        this.player.update();
+
+        // Update points based on platform movement
+        this.points += 3 + this.aceleration;
+        if (this.points > this.pointsRecord) {
+          this.pointsRecord = this.points;
+        }
+
+        // Update acceleration based on points
+        if (this.points > 1000) {
+          this.acelerationTweening = 1;
+          this.platformManager.maxDistanceBetween = 430;
+          this.scoreColor = "#076C00";
+        } else if (this.points > 2500) {
+          this.acelerationTweening = 2;
+          this.platformManager.maxDistanceBetween = 530;
+          this.scoreColor = "#0300A9";
+        } else if (this.points > 4000) {
+          this.acelerationTweening = 3;
+          this.platformManager.maxDistanceBetween = 580;
+          this.scoreColor = "#9F8F00";
+        }
+
+        this.aceleration += (this.acelerationTweening - this.aceleration) * 0.01;
+
+        for (i = 0; i < this.platformManager.platforms.length; i++) {
+          if (this.player.insercects(this.platformManager.platforms[i])) {
+            this.collidedPlatform = this.platformManager.platforms[i];
+            if (this.player.y < this.platformManager.platforms[i].y) {
+              this.player.y = this.platformManager.platforms[i].y;
+              this.player.velocityY = 0;
+            }
+
+            this.player.x = this.player.previousX;
+            this.player.y = this.player.previousY;
+
+            this.particles[this.particlesIndex++ % this.particlesMax] = new Particle({
+              x: this.player.x,
+              y: this.player.y + this.player.height,
+              color: this.collidedPlatform.color,
+            });
+
+            if (this.player.insercectsLeft(this.platformManager.platforms[i])) {
+              this.player.x = this.collidedPlatform.x - 64;
+              for (i = 0; i < 10; i++) {
+                this.particles[this.particlesIndex++ % this.particlesMax] = new Particle({
+                  x: this.player.x + this.player.width,
+                  y: random(this.player.y, this.player.y + this.player.height),
+                  velocityY: random(-30, 30),
+                  color: randomChoice(["#181818", "#181818", this.collidedPlatform.color]),
+                });
+              }
+              this.player.velocityY = -10 + -(this.aceleration * 4);
+              this.player.velocityX = -20 + -(this.aceleration * 4);
+              // Add haptic feedback for collision
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            } else {
+              if (this.dragging || this.keys.SPACE || this.keys.UP || this.keys.W || isTouching) {
+                this.player.velocityY = this.player.jumpSize;
+                this.player.isJumping = true;
+                // Add haptic feedback for jumping
+                window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+              } else {
+                this.player.isJumping = false;
+              }
+            }
+          }
+        }
+
+        // Check for game over
+        if (this.lives <= 0) {
+          this.gameOver = true;
+          // Notify SDK of game over with final score
+          window.FarcadeSDK.singlePlayer.actions.gameOver({ score: Math.floor(this.points) });
+        }
+
+        for (i = 0; i < this.platformManager.platforms.length; i++) {
+          this.platformManager.update();
+        }
+
+        for (i = 0; i < this.particles.length; i++) {
+          this.particles[i].update();
+        }
+      };
+
+      FarcadeRunner.draw = function () {
+        if (!this.gameStarted) {
+          // Draw a simple "Click Start to Play" message when game hasn't started
+          this.font = "24pt Arial";
+          this.fillStyle = "#181818";
+          this.fillText("Click Start to Play", this.width / 2 - 100, this.height / 2);
+          return;
+        }
+
+        // Draw background image
+        if (this.backgroundImage.complete) {
+          this.drawImage(this.backgroundImage, 0, 0, this.width, this.height);
+        }
+
+        this.player.draw();
+
+        for (i = 0; i < this.platformManager.platforms.length; i++) {
+          this.platformManager.platforms[i].draw();
+        }
+
+        for (i = 0; i < this.particles.length; i++) {
+          this.particles[i].draw();
+        }
+
+        // Display points and lives
+        this.fillStyle = "#181818";
+        this.font = "12pt Arial";
+        this.fillText("POINTS: " + Math.floor(this.points), this.width - 150, 33);
+        this.fillText("LIVES: " + this.lives, 20, 30);
+      };
+
+      FarcadeRunner.resize = function () {};
+
+      // Start screen handling
+      document.getElementById("start-button").addEventListener("click", function () {
+        document.getElementById("start-screen").style.display = "none";
+        FarcadeRunner.gameStarted = true;
+        FarcadeRunner.start();
+        // Start playing music when game starts
+        const music = document.getElementById("background-music");
+        if (!FarcadeRunner.isMuted) {
+          music.play();
+        }
+        // Notify SDK that game is ready
+        window.FarcadeSDK.singlePlayer.actions.ready();
+      });
+
+      // Add click handler for game over restart
+      FarcadeRunner.element.addEventListener("click", function () {
+        if (FarcadeRunner.gameOver) {
+          FarcadeRunner.gameOver = false;
+          FarcadeRunner.lives = 3;
+          FarcadeRunner.points = 0;
+          FarcadeRunner.aceleration = 0;
+          FarcadeRunner.acelerationTweening = 0;
+          FarcadeRunner.scoreColor = "#181818";
+          FarcadeRunner.platformManager.maxDistanceBetween = 350;
+          FarcadeRunner.platformManager.updateWhenLose();
+          FarcadeRunner.player.x = FarcadeRunner.platformManager.first.x + 50;
+          FarcadeRunner.player.y = FarcadeRunner.platformManager.first.y - 32;
+          FarcadeRunner.player.velocityX = 0;
+          FarcadeRunner.player.velocityY = 0;
+          // Restart music when game restarts
+          const music = document.getElementById("background-music");
+          if (!FarcadeRunner.isMuted) {
+            music.currentTime = 0;
+            music.play();
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
